@@ -1,0 +1,10 @@
+fn nice() int {
+    return 34 + 35
+}
+
+fn main() void {
+    let lol: int = nice()
+    let x: int = nice() - 35
+    let y: int = nice() - 34
+    let hehe: int = x + y
+}
