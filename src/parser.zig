@@ -54,6 +54,23 @@ fn parse_prim_expr(self: *Self) !void {
 
             if (self.expect(TokenKind.LParen)) {
                 self.advance();
+
+                while (true) {
+                    self.skip_whitespaces();
+
+                    if (self.eof() or self.expect(TokenKind.RParen)) {
+                        break;
+                    }
+
+                    try self.parse_expr(0);
+
+                    if (self.eof() or self.expect(TokenKind.RParen)) {
+                        break;
+                    }
+
+                    try self.match(TokenKind.Comma);
+                }
+
                 try self.match(TokenKind.RParen);
             }
         },
@@ -65,7 +82,7 @@ fn parse_prim_expr(self: *Self) !void {
 fn parse_expr(self: *Self, prec: u8) ParserError!void {
     try self.parse_prim_expr();
 
-    if (self.eof() or self.expect(TokenKind.Newline)) {
+    if (self.eof() or self.expect(TokenKind.Newline) or self.expect(TokenKind.Comma) or self.expect(TokenKind.RParen)) {
         return;
     }
 
@@ -82,7 +99,7 @@ fn parse_expr(self: *Self, prec: u8) ParserError!void {
 
         try self.parse_expr(new_prec);
 
-        if (self.eof() or self.expect(TokenKind.Newline)) {
+        if (self.eof() or self.expect(TokenKind.Newline) or self.expect(TokenKind.Comma) or self.expect(TokenKind.RParen)) {
             return;
         }
     }
@@ -127,6 +144,25 @@ fn parse_function_prototype(self: *Self) !void {
     try self.match(TokenKind.Fn);
     try self.match(TokenKind.Identifier);
     try self.match(TokenKind.LParen);
+
+    while (true) {
+        self.skip_whitespaces();
+
+        if (self.eof() or self.expect(TokenKind.RParen)) {
+            break;
+        }
+
+        try self.match(TokenKind.Identifier);
+        try self.match(TokenKind.Colon);
+        try self.parse_type();
+
+        if (self.eof() or self.expect(TokenKind.RParen)) {
+            break;
+        }
+
+        try self.match(TokenKind.Comma);
+    }
+
     try self.match(TokenKind.RParen);
     try self.parse_type();
 }

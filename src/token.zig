@@ -22,6 +22,7 @@ pub const Token = union(TokenKind) {
     Percent,
     Equal,
     Colon,
+    Comma,
     Newline,
 
     // <KEYWORDS>
@@ -62,6 +63,7 @@ pub const TokenKind = enum {
     Percent,
     Equal,
     Colon,
+    Comma,
     Newline,
 
     // <KEYWORDS>

@@ -92,6 +92,7 @@ pub fn get_token(self: *Self) Token {
         '%' => .Percent,
         '=' => .Equal,
         ':' => .Colon,
+        ',' => .Comma,
         '\n' => .Newline,
         'a'...'z', 'A'...'Z', '_' => return self.get_identifier(),
         '0'...'9' => return self.get_int_literal(),
