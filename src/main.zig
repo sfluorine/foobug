@@ -1,10 +1,34 @@
 const std = @import("std");
 const tok = @import("./token.zig");
-const Parser = @import("./parser.zig");
+const exp = @import("./expr.zig");
 
+const Parser = @import("./parser.zig");
 const AutoHashMap = std.AutoHashMap;
 const Token = tok.Token;
 const TokenKind = tok.TokenKind;
+const Expr = exp.Expr;
+
+fn visit_expr(expr: Expr) void {
+    switch (expr) {
+        .ValueExpr => |value| {
+            switch (value) {
+                .IntLiteral => |il| std.debug.print("Value: {d}\n", .{il}),
+                .Identifier => |id| std.debug.print("Value: {s}\n", .{id}),
+            }
+        },
+        .BinaryExpr => |bin| {
+            visit_expr(bin.lhs);
+            std.debug.print("Op: {any}\n", .{bin.op});
+            visit_expr(bin.rhs);
+        },
+        .FnCallExpr => |fncall| {
+            std.debug.print("Id: {s}\n", .{fncall.id});
+            for (fncall.arguments.items) |argument| {
+                visit_expr(argument);
+            }
+        },
+    }
+}
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -25,5 +49,5 @@ pub fn main() !void {
     const input = try std.fs.cwd().readFile("test.fb", &buffer);
 
     var parser = Parser.init(input, expr_prec);
-    try parser.parse_whole();
+    try parser.parse_whole(allocator);
 }

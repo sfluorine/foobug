@@ -1,10 +1,26 @@
 const std = @import("std");
 const tok = @import("./token.zig");
+const exp = @import("./expr.zig");
+const stm = @import("./stmt.zig");
 
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 const Lexer = @import("./lexer.zig");
 const AutoHashMap = std.AutoHashMap;
 const Token = tok.Token;
 const TokenKind = tok.TokenKind;
+const Expr = exp.Expr;
+const ExprKind = exp.ExprKind;
+const Binary = exp.Binary;
+const BinaryOp = exp.BinaryOp;
+const Value = exp.Value;
+const ValueKind = exp.ValueKind;
+const FnCall = exp.FnCall;
+const Stmt = stm.Stmt;
+const StmtKind = stm.StmtKind;
+const Type = stm.Type;
+const TypeKind = stm.TypeKind;
+const LetBinding = stm.LetBinding;
 
 pub const ParserError = error{
     SyntaxError,
@@ -24,7 +40,7 @@ fn expect(self: *const Self, kind: TokenKind) bool {
     return self.token == kind;
 }
 
-fn advance(self: *Self) void {
+pub fn advance(self: *Self) void {
     self.token = self.lexer.get_token();
 }
 
@@ -42,18 +58,26 @@ fn match(self: *Self, kind: TokenKind) !void {
     self.advance();
 }
 
-fn parse_prim_expr(self: *Self) !void {
+fn parse_prim_expr(self: *Self, allocator: Allocator) error{ SyntaxError, OutOfMemory }!Expr {
     switch (self.token) {
         .LParen => {
             self.advance();
-            try self.parse_expr(0);
+
+            const endtokens = .{TokenKind.RParen};
+            var expr = try self.parse_expr(allocator, 0, &endtokens);
+
             try self.match(TokenKind.RParen);
+            return expr;
         },
         .Identifier => {
+            const id = self.token.Identifier;
             self.advance();
 
             if (self.expect(TokenKind.LParen)) {
                 self.advance();
+
+                var arguments = ArrayList(Expr).init(allocator);
+                errdefer arguments.deinit();
 
                 while (true) {
                     self.skip_whitespaces();
@@ -62,7 +86,8 @@ fn parse_prim_expr(self: *Self) !void {
                         break;
                     }
 
-                    try self.parse_expr(0);
+                    const endtokens = .{ TokenKind.Comma, TokenKind.RParen };
+                    try arguments.append(try self.parse_expr(allocator, 0, &endtokens));
 
                     if (self.eof() or self.expect(TokenKind.RParen)) {
                         break;
@@ -72,18 +97,38 @@ fn parse_prim_expr(self: *Self) !void {
                 }
 
                 try self.match(TokenKind.RParen);
+
+                var fncall = try allocator.create(FnCall);
+                fncall.id = id;
+                fncall.arguments = arguments;
+
+                return Expr{ .FnCallExpr = fncall };
             }
+
+            const value = Value{ .Identifier = id };
+            return Expr{ .ValueExpr = value };
         },
-        .IntLiteral => self.advance(),
+        .IntLiteral => {
+            const value = Value{ .IntLiteral = self.token.IntLiteral };
+            self.advance();
+            return Expr{ .ValueExpr = value };
+        },
         else => return ParserError.SyntaxError,
     }
 }
 
-fn parse_expr(self: *Self, prec: u8) ParserError!void {
-    try self.parse_prim_expr();
+fn parse_expr(self: *Self, allocator: Allocator, prec: u8, end_tokens: []const TokenKind) !Expr {
+    var left = try self.parse_prim_expr(allocator);
+    errdefer left.deinit(allocator);
 
-    if (self.eof() or self.expect(TokenKind.Newline) or self.expect(TokenKind.Comma) or self.expect(TokenKind.RParen)) {
-        return;
+    if (self.eof() or self.expect(TokenKind.Newline)) {
+        return left;
+    }
+
+    for (end_tokens) |token| {
+        if (self.expect(token)) {
+            return left;
+        }
     }
 
     const new_prec = self.expr_prec.get(self.token) orelse {
@@ -95,100 +140,71 @@ fn parse_expr(self: *Self, prec: u8) ParserError!void {
     }
 
     while (new_prec > prec) {
+        const op = BinaryOp.from_token(self.token).?;
         self.advance();
 
-        try self.parse_expr(new_prec);
+        var right = try self.parse_expr(allocator, new_prec, end_tokens);
+        errdefer right.deinit(allocator);
 
-        if (self.eof() or self.expect(TokenKind.Newline) or self.expect(TokenKind.Comma) or self.expect(TokenKind.RParen)) {
-            return;
+        var binary = try allocator.create(Binary);
+        binary.op = op;
+        binary.lhs = left;
+        binary.rhs = right;
+
+        left = Expr{ .BinaryExpr = binary };
+
+        if (self.eof() or self.expect(TokenKind.Newline)) {
+            return left;
+        }
+
+        for (end_tokens) |token| {
+            if (self.expect(token)) {
+                return left;
+            }
         }
     }
+
+    return left;
 }
 
-fn parse_type(self: *Self) !void {
+fn parse_type(self: *Self) !Type {
+    const current = self.token;
+
     if (self.expect(TokenKind.Identifier)) {
         self.advance();
-        return;
+        return Type{ .UserDefined = current.Identifier };
     }
 
     try self.match(TokenKind.Int);
+
+    return Type.Int;
 }
 
-fn parse_let_binding(self: *Self) !void {
+fn parse_let_binding(self: *Self, allocator: Allocator) !Stmt {
     try self.match(TokenKind.Let);
+
+    const id = self.token;
+
     try self.match(TokenKind.Identifier);
     try self.match(TokenKind.Colon);
-    try self.parse_type();
+
+    const tp = try self.parse_type();
+
     try self.match(TokenKind.Equal);
-    try self.parse_expr(0);
 
-    if (!self.expect(TokenKind.EndOfFile) and !self.expect(TokenKind.Newline)) {
-        return ParserError.SyntaxError;
-    }
+    const end_tokens = .{ TokenKind.EndOfFile, TokenKind.Newline };
+    var expr = try self.parse_expr(allocator, 0, &end_tokens);
 
-    self.advance();
+    var let_binding = LetBinding{
+        .id = id.Identifier,
+        .type = tp,
+        .expr = expr,
+    };
+
+    return Stmt{ .LetBindingStmt = let_binding };
 }
 
-fn parse_statement(self: *Self) !void {
-    if (self.expect(TokenKind.Return)) {
-        self.advance();
-
-        try self.parse_expr(0);
-        return;
-    }
-
-    try self.parse_let_binding();
-}
-
-fn parse_function_prototype(self: *Self) !void {
-    try self.match(TokenKind.Fn);
-    try self.match(TokenKind.Identifier);
-    try self.match(TokenKind.LParen);
-
-    while (true) {
-        self.skip_whitespaces();
-
-        if (self.eof() or self.expect(TokenKind.RParen)) {
-            break;
-        }
-
-        try self.match(TokenKind.Identifier);
-        try self.match(TokenKind.Colon);
-        try self.parse_type();
-
-        if (self.eof() or self.expect(TokenKind.RParen)) {
-            break;
-        }
-
-        try self.match(TokenKind.Comma);
-    }
-
-    try self.match(TokenKind.RParen);
-    try self.parse_type();
-}
-
-fn parse_block(self: *Self) !void {
-    try self.match(TokenKind.LBrace);
-
-    while (true) {
-        self.skip_whitespaces();
-
-        if (self.eof() or self.expect(TokenKind.RBrace)) {
-            break;
-        }
-
-        try self.parse_statement();
-    }
-
-    try self.match(TokenKind.RBrace);
-}
-
-fn parse_function(self: *Self) !void {
-    try self.parse_function_prototype();
-    try self.parse_block();
-}
-
-pub fn parse_whole(self: *Self) !void {
+pub fn parse_whole(self: *Self, allocator: Allocator) !void {
     self.advance();
 
     while (true) {
@@ -198,7 +214,10 @@ pub fn parse_whole(self: *Self) !void {
             return;
         }
 
-        try self.parse_function();
+        var stmt = try self.parse_let_binding(allocator);
+        defer stmt.deinit(allocator);
+
+        std.debug.print("{s}: {}\n", .{ stmt.LetBindingStmt.id, stmt.LetBindingStmt.type });
     }
 }
 

@@ -1,27 +1,3 @@
-fn add(x: int, y: int) int {
-    return x + y
-}
-
-fn sub(x: int, y: int) int {
-    return x - y
-}
-
-fn mul(x: int, y: int) int {
-    return x * y
-}
-
-fn div(x: int, y: int) int {
-    return x / y
-}
-
-fn mod(x: int, y: int) int {
-    return x % y
-}
-
-fn main() void {
-    let x: int = add(34, 35)
-    let y: int = sub(100, 31)
-    let z: int = mul(34, 2) + 1
-    let w: int = div(138, 2)
-    let u: int = sub(100, mod(100, 69))
-}
+let ha: int = 34
+let he: int = 35
+let nice: int = ha + he
