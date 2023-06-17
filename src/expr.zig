@@ -23,11 +23,13 @@ pub const Expr = union(ExprKind) {
                 allocator.destroy(self.BinaryExpr);
             },
             .FnCallExpr => {
-                for (self.FnCallExpr.arguments.items) |*item| {
-                    item.deinit(allocator);
-                }
+                if (self.FnCallExpr.arguments) |arguments| {
+                    for (arguments.items) |*item| {
+                        item.deinit(allocator);
+                    }
 
-                self.FnCallExpr.arguments.deinit();
+                    arguments.deinit();
+                }
             },
             else => return,
         }
@@ -79,5 +81,5 @@ pub const ValueKind = enum {
 
 pub const FnCall = struct {
     id: []const u8,
-    arguments: ArrayList(Expr),
+    arguments: ?ArrayList(Expr),
 };

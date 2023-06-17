@@ -76,16 +76,20 @@ fn parse_prim_expr(self: *Self, allocator: Allocator) error{ SyntaxError, OutOfM
             if (self.expect(TokenKind.LParen)) {
                 self.advance();
 
+                if (self.expect(TokenKind.RParen)) {
+                    self.advance();
+
+                    var fncall = try allocator.create(FnCall);
+                    fncall.id = id;
+                    fncall.arguments = null;
+
+                    return Expr{ .FnCallExpr = fncall };
+                }
+
                 var arguments = ArrayList(Expr).init(allocator);
                 errdefer arguments.deinit();
 
                 while (true) {
-                    self.skip_whitespaces();
-
-                    if (self.eof() or self.expect(TokenKind.RParen)) {
-                        break;
-                    }
-
                     const endtokens = .{ TokenKind.Comma, TokenKind.RParen };
                     try arguments.append(try self.parse_expr(allocator, 0, &endtokens));
 
@@ -100,7 +104,7 @@ fn parse_prim_expr(self: *Self, allocator: Allocator) error{ SyntaxError, OutOfM
 
                 var fncall = try allocator.create(FnCall);
                 fncall.id = id;
-                fncall.arguments = arguments;
+                fncall.arguments = null;
 
                 return Expr{ .FnCallExpr = fncall };
             }
@@ -192,7 +196,7 @@ fn parse_let_binding(self: *Self, allocator: Allocator) !Stmt {
 
     try self.match(TokenKind.Equal);
 
-    const end_tokens = .{ TokenKind.EndOfFile, TokenKind.Newline };
+    const end_tokens = .{TokenKind.EndOfFile};
     var expr = try self.parse_expr(allocator, 0, &end_tokens);
 
     var let_binding = LetBinding{
